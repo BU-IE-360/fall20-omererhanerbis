@@ -1,9 +1,13 @@
 ## Progress Journal
 
-# Week 0 (September 22)
+# HW0 (September 22)
 
 [Here](files/example_homework_0.html) is my interesting R examples
 
 
-# Week 4 (November 20) HW1
+# HW1 (November 20) HW1
 [Here](files/IE_360_hw1.html) is my homework 1.
+
+
+# HW2 (December 18) HW1
+[Here](files/HW2/IE360_HW2.html) is my homework 2.
