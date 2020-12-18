@@ -293,8 +293,19 @@ Although, further analysis is required for better correlations with lagged versi
 
 
 
+### References
+
+Central Bank of the Republic of Turkey Electronic Data Delivery System (https://evds2.tcmb.gov.tr/)
 
 
+
+https://stackoverflow.com
+
+
+
+
+
+http://www.sthda.com/french/
 
 
 
