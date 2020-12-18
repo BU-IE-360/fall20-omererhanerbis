@@ -1,0 +1,306 @@
+---
+title: "IE360_PS2"
+author: "Omer Erhan Erbis"
+date: "12/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introduction - Main Idea
+
+Newly introduced firms in an economy is one of the major wheels that contributes to the whole system significantly. Even the famous "invisible hand" Adam Smith refers, requires the competition of the firms and reducing the economic profit to 0 by the introduction of new business. Also, new firms creates employment thus having another influence on the macro level. New firms may also create new fields that pursues new or not highlighted delights of people. Therefore the aspects of the new firms in an economy are important to the society.
+
+Therefore this research is focused on newly introduced firms of Turkey. Since Turkey is regarded as a major developing country in G20 with a large population, new business ideas and firm establishments are always various. However, rather than the number of newly introduced firms, this research is focused on the total capital of these firms in TRY which is the local currency that is needed for the efficient operation of the business. Since number of firms may be small but the total capital may be huge one year and vice versa in another year, this approach seems a better fit for any investigtion although natural normalization can reduce the discrepancy between the two years mentioned to some extent.
+
+For this important factor, we aim to find impactful variables that affects this to deduce some relation between in order to further increase or decrease to stabilize this factor in an economy.
+
+
+## Variables
+
+Variables of interest in this research will be the Gold Prices in USD per ons, USDTRY exchange rate, Consumer Price Index (will be referred as CPI) and Producer Price Index (will be referred as PPI). Since any new business means investment, it is a natural thought to include prominent investment options or impactful variables into the research. Gold prices are chosen due to them being one of the major investment options in the whole economy and USDTRY is chosen due to having significant impact on Foreign Direct Investment and being an impoortant local investment option for the citizens of Turkey. CPI impacts the decisions of the households whether to save and invest or consume, affecting demand and price of the goods while PPI reflects the costs of business in a general sense that will have a major impact on the introduction of the new firms/business.
+
+
+# Data Manipulation
+
+## Data and Libraries to use
+
+We will use Central Bank of the Republic of Turkey Electronic Data Delivery System (https://evds2.tcmb.gov.tr/) data in our analysis. It provides us with the minimum of monthly data of selected variables and monthly data will be used in here. We will use various libraries such as readxl, zoo, xts to read and manipulate data and ggplot2, GGally, GridExtra to visualize the result in a better way.
+
+
+```{r, warning=FALSE, message=FALSE}
+library(readxl)
+library(zoo)
+library(xts)
+library(astsa)
+library(ggplot2)
+library(GGally)
+library(fpp2)
+library(gridExtra)
+
+EVDS <- read_excel("EVDS.xlsx", 
+                   col_types = c("text", "numeric", "numeric", 
+                                 "numeric", "numeric", "numeric"))
+```
+
+## Time Series Conversion
+
+Changing the variable names into English, rearranging columns and changing dataset into a time series requires steps below. By doing these, we manipulate the data in a way that will be better and easier to do analysis on.
+
+```{r, warning=FALSE, results='hide'}
+dataset <- EVDS[-c(131:nrow(EVDS)),]
+colnames(dataset) <- c("Date", "Gold_Prices", "USDTRY", "CPI", "PPI", "Total_New_Business_TRY" )
+dataset <- dataset[,c(1, ncol(dataset), 2:(ncol(dataset)-1))]
+transform(dataset, Date = as.yearmon(Date))
+
+
+dataset_xts <- as.xts(dataset[,-1], order.by = as.yearmon(dataset$Date))
+# View(dataset_xts)
+```
+
+
+# Data Visualization
+
+First, the original values of the variables of interest are important and requires a observation. We will benefit from base R plotting and zoo package plotting for doing this task.
+
+
+
+```{r, warning=FALSE, results='hold'}
+# Time Plot of Variables
+plot(dataset_xts$Total_New_Business_TRY, main = "Total_New_Business_TRY")
+par(mfrow = c(2,2))
+plot(dataset_xts$Gold_Prices, main = "Gold_Prices")
+plot(dataset_xts$USDTRY, main = "USDTRY")
+plot(dataset_xts$CPI, main = "CPI")
+plot(dataset_xts$PPI, main = "PPI")
+par(mfrow = c(1,1))
+plot.zoo(dataset_xts[,-1], col = "red")
+```
+
+
+
+Also, boxplots of these variables may be important and interesting to look at to better comprehend the values of the variables, seeing more clearly the intensity areas and outliers.
+
+
+
+```{r}
+par(mfrow = c(2,3))
+boxplot(as.numeric(dataset_xts$Total_New_Business_TRY), main = "Total_New_Business_TRY")
+boxplot(as.numeric(dataset_xts$Gold_Prices), main = "Gold_Prices")
+boxplot(as.numeric(dataset_xts$USDTRY), main = "USDTRY")
+boxplot(as.numeric(dataset_xts$CPI), main = "CPI")
+boxplot(as.numeric(dataset_xts$PPI), main = "PPI")
+```
+
+
+
+After these, we will use ggplot2 to better plot the variables and add some smoothing lines to increase comprehension of them and seeing the correlation between them. Although our data set is time-series, this kind of observation and plotting still gives a good and vague idea of correlation of variables.
+
+### Smoothing Line "auto" (R & package helps choosing)
+
+```{r}
+gg1 <- ggplot(data = dataset_xts, mapping = aes(x= Gold_Prices, y=Total_New_Business_TRY, color="Points & Line"))+
+  theme_light()+
+  theme(axis.text.x = element_text(angle = 90), legend.title = element_blank())+
+  geom_point(stat = "identity")+
+  geom_smooth(orientation = "y")+
+  labs(title = "Total_New_Business_TRY vs Gold_Prices", subtitle = "Data Points & Smoothing Line", caption = "ggplot2", x = "Gold_Prices", y = "Total_New_Business_TRY") +
+  scale_color_manual(values = c("blue","gray"))
+
+
+gg2 <- ggplot(data = dataset_xts, mapping = aes(x= USDTRY, y=Total_New_Business_TRY, color="Points & Line"))+
+  theme_dark()+
+  theme(axis.text.x = element_text(angle = 90), legend.title = element_blank())+
+  geom_point(stat = "identity")+
+  geom_smooth(orientation = "y")+
+  labs(title = "Total_New_Business_TRY vs USDTRY", subtitle = "Data Points & Smoothing Line", caption = "ggplot2", x = "USDTRY", y = "Total_New_Business_TRY") +
+  scale_color_manual(values = c("red","white"))
+
+
+gg3 <- ggplot(data = dataset_xts, mapping = aes(x= CPI, y=Total_New_Business_TRY, color="Points & Line"))+
+  theme_grey()+
+  theme(axis.text.x = element_text(angle = 90), legend.title = element_blank())+
+  geom_point(stat = "identity")+
+  geom_smooth(orientation = "y")+
+  labs(title = "Total_New_Business_TRY vs CPI", subtitle = "Data Points & Smoothing Line", caption = "ggplot2", x = "CPI", y = "Total_New_Business_TRY") +
+  scale_color_manual(values = c("green","black"))
+
+
+gg4 <- ggplot(data = dataset_xts, mapping = aes(x= PPI, y=Total_New_Business_TRY, color="Points & Line"))+
+  theme_grey()+
+  theme(axis.text.x = element_text(angle = 90), legend.title = element_blank())+
+  geom_point(stat = "identity")+
+  geom_smooth(orientation = "y")+
+  labs(title = "Total_New_Business_TRY vs PPI", subtitle = "Data Points & Smoothing Line", caption = "ggplot2", x = "PPI", y = "Total_New_Business_TRY") +
+  scale_color_manual(values = c("purple","yellow"))
+
+grid.arrange(gg1, gg2, gg3, gg4, ncol = 2)
+```
+
+
+### Smoothing Line "lm" (Linear model smoothing)
+
+
+```{r}
+lgg1 <- ggplot(data = dataset_xts, mapping = aes(x= Gold_Prices, y=Total_New_Business_TRY, color="Points & Line"))+
+  theme_light()+
+  theme(axis.text.x = element_text(angle = 90), legend.title = element_blank())+
+  geom_point(stat = "identity")+
+  geom_smooth(orientation = "y", method = "lm")+
+  labs(title = "Total_New_Business_TRY vs Gold_Prices", subtitle = "Data Points & Smoothing Line", caption = "ggplot2", x = "Gold_Prices", y = "Total_New_Business_TRY") +
+  scale_color_manual(values = c("blue","gray"))
+
+
+lgg2 <- ggplot(data = dataset_xts, mapping = aes(x= USDTRY, y=Total_New_Business_TRY, color="Points & Line"))+
+  theme_dark()+
+  theme(axis.text.x = element_text(angle = 90), legend.title = element_blank())+
+  geom_point(stat = "identity")+
+  geom_smooth(orientation = "y", method = "lm")+
+  labs(title = "Total_New_Business_TRY vs USDTRY", subtitle = "Data Points & Smoothing Line", caption = "ggplot2", x = "USDTRY", y = "Total_New_Business_TRY") +
+  scale_color_manual(values = c("red","white"))
+
+
+lgg3 <- ggplot(data = dataset_xts, mapping = aes(x= CPI, y=Total_New_Business_TRY, color="Points & Line"))+
+  theme_grey()+
+  theme(axis.text.x = element_text(angle = 90), legend.title = element_blank())+
+  geom_point(stat = "identity")+
+  geom_smooth(orientation = "y", method = "lm")+
+  labs(title = "Total_New_Business_TRY vs CPI-", subtitle = "Data Points & Smoothing Line", caption = "ggplot2", x = "CPI", y = "Total_New_Business_TRY") +
+  scale_color_manual(values = c("green","black"))
+
+
+lgg4 <- ggplot(data = dataset_xts, mapping = aes(x= PPI, y=Total_New_Business_TRY, color="Points & Line"))+
+  theme_grey()+
+  theme(axis.text.x = element_text(angle = 90), legend.title = element_blank())+
+  geom_point(stat = "identity")+
+  geom_smooth(orientation = "y", method = "lm")+
+  labs(title = "Total_New_Business_TRY vs PPI-", subtitle = "Data Points & Smoothing Line", caption = "ggplot2", x = "PPI", y = "Total_New_Business_TRY") +
+  scale_color_manual(values = c("purple","yellow"))
+
+grid.arrange(lgg1, lgg2, lgg3, lgg4, ncol = 2)
+```
+
+
+## Minmax Function
+
+
+Since value scales are not harmonious, minmax scaling of them to 0-1 interval will help us with a better understanding of values. This will increase the capabilities of inferring correlations through graphs.
+
+```{r, warning=FALSE}
+minmax_scaler <- function(x, a=0, b=1) {
+  "
+    x: data. numeric vector of values to be scaled
+    a: desired minimum after scaling takes place
+    b: desired maximum after scaling takes place
+    
+    e.g. f(c(1,2,3,4), 1, 17)
+    [1]  1.000000  6.333333 11.666667 17.000000
+    "
+  (((b - a)*(x - min(x, na.rm = T))) / (max(x, na.rm = T) - min(x, na.rm = T))) + a
+}
+```
+
+
+
+### Representation of  minmax scaled values
+
+
+```{r, warning=FALSE}
+ts.plot(as.xts(data.frame(matrix(unlist(lapply(dataset_xts, FUN =  minmax_scaler)), ncol = length(lapply(dataset_xts, FUN =  minmax_scaler)) )), order.by = as.yearmon(dataset$Date)), col = 1:5, main = "Minmax Scaled Value-Time Plot", ylab = "minmax scaled values")
+legend("top", legend = c("Gold_Prices", "USDTRY", "CPI", "PPI", "Total_New_Business_TRY" ), col = 1:5, lty = 1, cex = 0.5)
+
+```
+
+
+# Correlations
+
+
+Since we are after the relations of chosen variables on the total capital of newly introduced firms/business, the correlations of the variables will give us a good understaing of such relations. We will first look at the correlations individually with Pearson Correlation Test.
+
+
+```{r, warning=FALSE}
+# Default Pearson Correlation Test (Kendall and Spearman do not apply)
+cor.test(dataset_xts$Total_New_Business_TRY, dataset_xts$Gold_Prices)
+cor.test(dataset_xts$Total_New_Business_TRY, dataset_xts$USDTRY)
+cor.test(dataset_xts$Total_New_Business_TRY, dataset_xts$CPI)
+cor.test(dataset_xts$Total_New_Business_TRY, dataset_xts$PPI)
+```
+
+### Cross Correlations (Table form)
+
+```{r}
+cormat<-signif(cor(dataset_xts),2)
+cormat
+```
+
+
+### Correlations in Graph and Numeric Form (both minmax and original, in order)(see no difference between)
+
+
+```{r, warning=FALSE}
+ggpairs(data.frame(matrix(unlist(lapply(dataset_xts, FUN =  minmax_scaler)), ncol = length(lapply(dataset_xts, FUN =  minmax_scaler)) )))
+ggpairs(as.data.frame(dataset_xts))
+```
+
+
+### Auto-correlations (up to 12 lags)(12 is chosen for seeing yearly and seasonally autocorrelations)
+
+
+```{r, warning=FALSE, out.width = '\\maxwidth'}
+par(mfrow = c(3,2))
+acf_Total_New_Business_TRY <- acf(dataset_xts$Total_New_Business_TRY, type = "correlation", lag.max = 12, na.action = na.pass)
+acf_Gold_Prices <- acf(dataset_xts$Gold_Prices, type = "correlation", lag.max = 12, na.action = na.pass)
+acf_USDTRY <- acf(dataset_xts$USDTRY, type = "correlation", lag.max = 12, na.action = na.pass)
+acf_CPI <- acf(dataset_xts$CPI, type = "correlation", lag.max = 12, na.action = na.pass)
+acf_PPI <- acf(dataset_xts$CPI, type = "correlation", lag.max = 12, na.action = na.pass)
+par(mfrow = c(1,1))
+```
+
+
+### Auto-correlations in table form (dataframe)
+
+```{r}
+autocorrelation_map <- t((data.frame(acf_Total_New_Business_TRY$acf, acf_Gold_Prices$acf, acf_USDTRY$acf, acf_CPI$acf, acf_PPI$acf))[-1,])
+colnames(autocorrelation_map) <- 1:12
+autocorrelation_map
+```
+
+
+# Results
+
+This research aims to find the relations of newly introduced and gold prices, USDTRY exchange rate, CPI and PPI. The variables are chosen with an economic intuition and visual representation and calculation analysis has been made. The variables have a clear impact on the target with large correlations, stated above. 
+
+# Possible Explanations
+
+New business in Turkish economy is clearly affected with FDI and as a result of an increase in USDTRY exchange rate, the total amount increases.
+
+
+
+Gold prices are also important on this and with an increase in gold prices, investors gains turn into investment in new Turkish business.
+
+
+
+With an increase in PPI, required amount for new business increases thus resulting in total capital value increase in newly introduced firms.
+
+
+
+CPI increase represents the prices of all goods, and as a proxy, increase in CPI reflects an increase in overall prices. Thus, new business and firms desire to enter the market gets higher and the total amount of capital in these new firms increases.
+
+
+
+Although, further analysis is required for better correlations with lagged versions and with a broader set of variables. Also, the variables may be impacted by an outside variable (such as inflation) and results may be misleading due to this aspect.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
