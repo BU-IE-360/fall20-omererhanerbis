@@ -11,3 +11,6 @@
 
 # HW2 (December 18)
 [Here](files/HW2/IE360_HW2.html) is my homework 2.
+
+# HW3 (January 9)
+[Here](files/HW3/IE360_HW3.html) is my homework 3.
