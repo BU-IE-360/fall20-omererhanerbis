@@ -1,0 +1,319 @@
+---
+title: "IE360_HW3"
+author: "Omer Erhan Erbis"
+date: "1/9/2021"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+We are going to use some packages indicated below in our analysis. These are really important packagec for both data visualization, data manipulation and statistical operations.
+
+
+```{r, message=FALSE}
+library(readxl)
+library(zoo)
+library(xts)
+library(astsa)
+library(ggplot2)
+library(GGally)
+library(fpp2)
+library(gridExtra)
+```
+
+We will use Central Bank of the Republic of Turkey Electronic Data Delivery System (https://evds2.tcmb.gov.tr/) data in our analysis. It provides us with the minimum of monthly data of selected variables and monthly data will be used in here.
+
+```{r, warning=FALSE}
+EVDS <- read_excel("EVDS.xlsx", 
+                   col_types = c("text", "numeric", 
+                                 "numeric", "numeric", "numeric", "numeric", "numeric"))
+```
+
+
+## Variables
+
+Variable of interest in this research will be the  Consumer Price Index value for Alcoholic Beverages and Tobacco. This variable is important for many consumers, and also has a good market share in the total economy.
+
+
+Also, in predicting Consumer Price Index value for Alcoholic Beverages and Tobacco, we will use several independent variables in our analysis to better estimate the value.
+
+The chosen variables are USDTRY exchange rate, Interest Rates on TRY deposity, Consumer Confidence Index, Unemployment (%) and Labour Force (%). It is obvious that such core dynamics in an economy that are related to income and prices of mentioned goods are important in precise estimation.
+
+## Data Manipulation & Time Series Conversion
+
+
+```{r, warning=FALSE, results='hide'}
+dataset <- EVDS
+
+
+colnames(dataset) <- c("Date",
+                       "USDTRY",
+                       "Interest_Rates",
+                       "CPI_Alcoholic_Beverages_and_Tobacco",
+                       "CCI",
+                       "Unemployment",
+                       "Labour_Force")
+dataset <- dataset[,c(1, 4, 2:3, 5:ncol(dataset))]
+transform(dataset, Date = as.yearmon(Date))
+
+
+dataset_xts <- as.xts(dataset[,-1], order.by = as.yearmon(dataset$Date))
+
+
+
+```
+
+```{r}
+head(dataset_xts)
+```
+
+
+# Data Visualization
+
+
+To better visualize the variables at hand, we will look both in given values and their log scale values of dependent variable and predictors.
+
+
+Log scale helps us get rid of the variance of variances, sustaining some properties that are crucial in time series models for better fits.
+
+
+
+```{r, warning=FALSE}
+plot(dataset_xts$CPI_Alcoholic_Beverages_and_Tobacco, main = "CPI Alcoholic Beverages & Tobacco")
+plot(log(dataset_xts$CPI_Alcoholic_Beverages_and_Tobacco), main = "CPI Alcoholic Beverages & Tobacco")
+
+```
+
+
+As you can see, there is a clear upwards trend in the data, which will help us in constructing the model and predicting values.
+
+
+```{r, warning=FALSE}
+plot.zoo(dataset_xts[,2:ncol(dataset_xts)], main = "Plot of Variables", col = "dark blue")
+plot.zoo(log(dataset_xts)[,2:ncol(dataset_xts)], main = "Plot of Variables", col = "dark blue")
+```
+
+There are a mixture of data in the plots above. There are some certain seasonalities that can easily observed and some trends that are easy to infer, but some remain indecisive at the first glance of the data visuals.
+
+### Cross Correlations
+
+Now, lets look at the correlations of datas with each other to better understand the situation and relationship between the data.
+
+
+```{r, warning=FALSE}
+ggpairs(as.data.frame(log(dataset_xts)))
+```
+
+All the variables chosen seems to have significant correlation values with variable of interest, making our chosen variables to be a good choice for the first look. We will benefit from these afterwards, in our regression analysis. 
+
+
+Now, lets run a basic regression model without regarding the time series property of the data.
+
+
+```{r, warning=FALSE}
+summary(lm(dataset_xts$CPI_Alcoholic_Beverages_and_Tobacco ~ ., dataset_xts))
+```
+
+
+It seems that except CCI, all other variables will have a great impact on the calculation of the variable of interest.
+
+### Decomposed for Time Series Qualities
+
+Yet again, lets do a basic trend, seasonality and error extraction from the variable of interest with the decompose() function. It runs a simple regression with the 2 variables mentioned and returns individual properties of these.
+
+```{r, warning=FALSE}
+plot(decompose(as.ts(log(dataset_xts$CPI_Alcoholic_Beverages_and_Tobacco))))
+```
+
+As we can see, the trend and seasonality in the variale of interest is clearly shown. Also, the error values remains at a neat level for time series analysis requirements.
+
+
+## Auto-Correlation Tables
+
+
+```{r, warning=FALSE}
+par(mfrow = c(3,2))
+acf(dataset_xts$CPI_Alcoholic_Beverages_and_Tobacco, lag.max = 50, na.action = na.pass)
+acf(dataset_xts$USDTRY, lag.max = 48, na.action = na.pass)
+acf(dataset_xts$Interest_Rates, lag.max = 48, na.action = na.pass)
+acf(dataset_xts$CCI, lag.max = 48, na.action = na.pass)
+acf(dataset_xts$Unemployment, lag.max = 48, na.action = na.pass)
+acf(dataset_xts$Labour_Force, lag.max = 48, na.action = na.pass)
+par(mfrow = c(1,1))
+
+```
+
+As can be seen above, time series properties of the variables are clearly observable. It is important to notice the auto-correlation values of these variables for understanding the state of data.
+
+We cannot clearly see the importance of any lag for the variable of interest, therefore we will run a partial auto-correlation analysis to infer lag values that will help us in the construction of the model.
+
+```{r, warning=FALSE}
+pacf(log(dataset_xts$CPI_Alcoholic_Beverages_and_Tobacco), lag.max = 48, na.action = na.pass)
+```
+
+
+It seems that only the lag_1 value will be meaningful for our regression analysis, and other lag values will be represented mostly by this lag only. Therefore, it is enough to use lag_1 in analysis.
+
+
+For interest, it is also plausible to look at cross-correlations between variable of interest and regressor variables. This will further strengthen the analysis results, but will be disregarded as out of scope in this homework.
+
+```{r, warning=FALSE}
+par(mfrow = c(3,2))
+ccf(as.ts(dataset_xts[,1]), as.ts(dataset_xts[,2]), na.action = na.pass, lag.max = 48)
+ccf(as.ts(dataset_xts[,1]), as.ts(dataset_xts[,3]), na.action = na.pass, lag.max = 48)
+ccf(as.ts(dataset_xts[,1]), as.ts(dataset_xts[,4]), na.action = na.pass, lag.max = 48)
+ccf(as.ts(dataset_xts[,1]), as.ts(dataset_xts[,5]), na.action = na.pass, lag.max = 48)
+ccf(as.ts(dataset_xts[,1]), as.ts(dataset_xts[,6]), na.action = na.pass, lag.max = 48)
+par(mfrow = c(1,1))
+
+```
+
+
+## Time Series Variables
+
+
+First of all, lets introduce the lag_1 values into our data.
+
+```{r, warning=FALSE}
+# lag_1
+dataset_xts$lag_1 <- c(NA, as.data.frame(dataset_xts)[-nrow(dataset_xts),1])
+```
+
+And now, we can track the trend by adding a column containing a series indicating the point of time. This will track down the increasing or decreasing trend if present and return the value in the analysis.
+
+```{r, warning=FALSE}
+# trend
+dataset_xts$trend <- 1:nrow(dataset_xts)
+```
+
+
+Lastly, as we observed previously, there is a yearly seasonality in our data. To track this down and include this important feature in our regression analysis, we will introduce dummy variables that corresponds to months of a year to include in our regression analysis.
+
+```{r, warning=FALSE}
+# season
+
+dataset_xts$january     <- rep(c(0,0,0,0,0,0,1,0,0,0,0,0), length.out = 151)
+dataset_xts$february    <- rep(c(0,0,0,0,0,0,0,1,0,0,0,0), length.out = 151)
+dataset_xts$march       <- rep(c(0,0,0,0,0,0,0,0,1,0,0,0), length.out = 151)
+dataset_xts$april       <- rep(c(0,0,0,0,0,0,0,0,0,1,0,0), length.out = 151)
+dataset_xts$may         <- rep(c(0,0,0,0,0,0,0,0,0,0,1,0), length.out = 151)
+dataset_xts$june        <- rep(c(0,0,0,0,0,0,0,0,0,0,0,1), length.out = 151)
+dataset_xts$july        <- rep(c(1,0,0,0,0,0,0,0,0,0,0,0), length.out = 151)
+dataset_xts$august      <- rep(c(0,1,0,0,0,0,0,0,0,0,0,0), length.out = 151)
+dataset_xts$september   <- rep(c(0,0,1,0,0,0,0,0,0,0,0,0), length.out = 151)
+dataset_xts$october     <- rep(c(0,0,0,1,0,0,0,0,0,0,0,0), length.out = 151)
+dataset_xts$november    <- rep(c(0,0,0,0,1,0,0,0,0,0,0,0), length.out = 151)
+dataset_xts$december    <- rep(c(0,0,0,0,0,1,0,0,0,0,0,0), length.out = 151)
+```
+
+
+To see the final sample of our data, see below:
+
+```{r, warning=FALSE}
+head(dataset_xts)
+```
+
+## Regression
+
+
+To run our data, we will introduce the training set until November 2020. And we will run our linear regression model to estimate the coefficients of related regressors.
+
+```{r, warning=FALSE}
+dataset1 <- dataset_xts[-c(nrow(dataset_xts)-1, nrow(dataset_xts)),]
+
+
+fit <- (lm(data = dataset1, formula = CPI_Alcoholic_Beverages_and_Tobacco ~ . -december))
+summary(fit)
+```
+
+It is surprising that none of the variables of interest are significantly affecting the variable of interest, and it is only affected by its lag_1 value very significantly. This asserts that variable of interest is independent of the other variables chosen. This may result from inefficient variable choosing or simply independence of the variable and strong dependence of its own to its previous lags. On top of that, unemployment value also seems somewhat important in the prediction of variable. Conclusions can be made from this analysis.
+
+
+Lastly, fitting the model and using the December 2020 data, and last available values of unemployment and labour force as vague proxies, we will obtain a predicted value for that time period.
+
+```{r, warning=FALSE}
+pseudo <- dataset_xts[147, c(5,6)]
+index(pseudo) <- index(dataset_xts[150,])
+
+
+newdataforpredict <- cbind(dataset_xts[150, c(1:4, 7:ncol(dataset_xts))], pseudo)
+predict(fit, newdata = newdataforpredict)
+```
+
+
+# Results & Possible Explanations
+
+All in all, the time series regression resulted in a somewhat failure due to high correlation with previous periods and increasing trend. Predictions using only previous period data seems to be more efficient for computer power regard. R-squared value however is very powerful, indicating a success in the estimation capabilities of the model. This result may come from increasing tax applications and increasing demand on the goods referred that are not captured in the variables chosen.
+
+
+## Alternative Models
+
+
+
+```{r, warning=FALSE}
+fit <- (lm(data = dataset1, formula = log(CPI_Alcoholic_Beverages_and_Tobacco) ~ log(USDTRY) +
+             log(Interest_Rates) +
+             log(CCI) +
+             log(Unemployment) +
+             log(Labour_Force)))
+
+summary(fit)
+```
+
+
+```{r, warning=FALSE}
+fit <- (lm(data = dataset1, formula = log(CPI_Alcoholic_Beverages_and_Tobacco) ~ log(USDTRY) +
+             log(Interest_Rates) +
+             log(CCI) +
+             log(Unemployment) +
+             log(Labour_Force) +
+             trend))
+
+summary(fit)
+```
+
+
+```{r}
+fit <- (lm(data = dataset1, formula = log(CPI_Alcoholic_Beverages_and_Tobacco) ~ log(USDTRY) +
+             log(Interest_Rates) +
+             log(CCI) +
+             log(Unemployment) +
+             log(Labour_Force) +
+             log(lag_1) +
+             trend))
+summary(fit)
+```
+
+
+
+
+
+```{r}
+# lag_12
+dataset1$lag_12 <- c(rep(NA, 12), as.data.frame(dataset1)[-c((nrow(dataset1)-11):nrow(dataset1)),1])
+
+
+fit <- (lm(data = dataset1, formula = log(CPI_Alcoholic_Beverages_and_Tobacco) ~ log(USDTRY) +
+             log(Interest_Rates) +
+             log(CCI) +
+             log(Unemployment) +
+             log(Labour_Force) +
+             log(lag_12) +
+             trend))
+summary(fit)
+```
+
+
+### References
+
+Central Bank of the Republic of Turkey Electronic Data Delivery System (https://evds2.tcmb.gov.tr/)
+
+
+
+https://stackoverflow.com
