@@ -1,0 +1,426 @@
+---
+title: "IE360_HW4"
+author: "Omer Erhan Erbis"
+date: "1/29/2021"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Turkish Electricity Consumption is really important matter to work on due to supply's dependence on consumption demand. Therefore careful and meticilous modelling and accurate estimations are required, and this project will present a way to perform such modelling and its results.
+
+
+# Data Import & Manipulation
+
+### Libraries
+
+
+```{r, message=FALSE}
+library(forecast)
+library(tseries)
+library(ggplot2)
+library(zoo)
+library(xts)
+library(dplyr)
+library(tidyr)
+library(MLmetrics)
+library(urca)
+library(astsa)
+library(readr)
+library(data.table)
+library(readr)
+```
+
+### Consumption Data
+
+Data is obtained from EPIAS - EXIST Transparency Platform. Following chunk imports and manipulates a little.
+
+I will transform the data into daily series since it will be better to estimate daily values values as it was mentioned in the lectures. Can be extended to hourly easily.
+
+```{r,  message=FALSE, results='hide'}
+# consumption indices and data
+getwd()
+bulk_consumption_with_temp <- read.csv("IEdata.csv")
+names(bulk_consumption_with_temp) <- c("Date", "Hour", "Consumption")
+bulk_consumption_with_temp <- as.data.table(bulk_consumption_with_temp)
+bulk_consumption =bulk_consumption_with_temp %>% 
+  group_by(Date) %>% 
+  summarise(Consumption = sum(Consumption)
+  )
+bulk_consumption$Date <- as.Date(bulk_consumption$Date)
+head(bulk_consumption)
+
+```
+
+
+Feature dataset is obtained from our group's project feature dataset. It includes some thought features that may impact the consumption values. Appropriate length of data is given by 1484 value since the dataset is a little longer.
+
+
+```{r}
+# feature indices and data
+all_features_df <- read.csv("all_features_with_dummies.csv")
+# head(all_features_df)
+# tail(all_features_df)
+dt_daily <- head(all_features_df, 1484)
+# tail(dt_daily)
+dt_daily <- as.data.table(dt_daily)
+tail(dt_daily)
+```
+
+
+### Dataset Division - Test & Train
+
+
+The manipualtion, test and train dataset division is performed next. Train data is as specified in the data 2021-01-09. Test data is between 2021-01-10 and 2021-01-23, as it is available and will be used to measure performance only.
+
+
+```{r}
+# test train prediction determination
+test_dt_daily<- dt_daily[1471:(nrow(dt_daily)),]
+dt_daily <- dt_daily[1:1470,]
+guess_ahead <- nrow(test_dt_daily)
+
+train_consumption_daily <- bulk_consumption$Consumption[1:1470]
+test_consumption_daily <- tail(bulk_consumption$Consumption, (length(bulk_consumption$Consumption)-nrow(dt_daily)))
+```
+
+# Stationarity
+
+## Time-series Properties
+
+### Time-series Conversion
+
+Next, we will convert the dataset into a time-series dataset with weekly frequency as it is mentioned in the lectures, electricity consumption follows a weekly seasonal pattern. Therefore, frequency is set to 7.
+
+Decomposition, residual analysis that defines stationarity property of the data (residuals) through unit-root test is also performed here.
+
+Next, autocorrelation and partial auto-correlation graphs are given.
+
+```{r}
+# time series conversion
+ts_train_consumption_daily <- ts(train_consumption_daily, frequency = 7)
+ts_test_consumption_daily <- ts(test_consumption_daily, frequency = 7)
+
+decomposed_ts_train_consumption_daily <- decompose(ts_train_consumption_daily)
+plot(decomposed_ts_train_consumption_daily)
+decomp_ts_random <- decomposed_ts_train_consumption_daily$random
+summary(ur.kpss(decomp_ts_random))
+```
+
+
+Seasonality pattern of weekly pattern is clear as it can be deduced from seasonal chart of the output. The random part that is residuals seems to have somewhat stationary property, but some outliers are required to be corrected.
+
+
+### Auto-Correlations
+
+```{r}
+par(mfrow = c(3,1))
+plot(decomp_ts_random)
+acf(decomp_ts_random, na.action = na.pass)
+pacf(decomp_ts_random, na.action = na.pass)
+par(mfrow = c(1,1))
+```
+
+
+Auto-correlationns and partial-autocorrelations are as seen. Some values imply positive correlations, and we will first try logging to see whether there is a non-constant variance in the data. Afterwards, we will try weekly differencing as the plots imply lag7 autocorrelations a little.
+
+
+### Log-values
+
+```{r}
+# logging the data
+logged_ts_train_consumption_daily <- log(ts_train_consumption_daily)
+logged_ts_test_consumption_daily <- log(ts_test_consumption_daily)
+
+decomposed_logged_ts_train_consumption_daily <- decompose(logged_ts_train_consumption_daily)
+plot(logged_ts_train_consumption_daily)
+decomp_logged_ts_random <- decomposed_logged_ts_train_consumption_daily$random
+summary(ur.kpss(decomp_logged_ts_random))
+
+
+par(mfrow = c(3,1))
+plot(decomp_logged_ts_random)
+acf(decomp_logged_ts_random, na.action = na.pass)
+pacf(decomp_logged_ts_random, na.action = na.pass)
+par(mfrow = c(1,1))
+```
+
+
+Since the logged values do not improve the residuals and stationarity, logging is deemed to be ineffective.
+
+
+### Differencing
+
+
+
+```{r}
+# differencing with lag7
+differenced_logged_ts_train_consumption_daily <- ts(diff(ts_train_consumption_daily, 7), frequency = 7)
+decomposed_differenced_logged_ts_train_consumption_daily <- decompose(differenced_logged_ts_train_consumption_daily)
+decomp_diffed_logged_ts_random <- decomposed_differenced_logged_ts_train_consumption_daily$random
+summary(ur.kpss(decomp_diffed_logged_ts_random))
+```
+
+
+Differencing seems to be not effective as the unit-root test gives higher p-value. Therefore differencing will not be used in the optimal model.
+
+
+Therefore we will use base values and correct them with outlier operations.
+
+
+
+## Outlier Optimization
+
+
+First, we will get the indices of error outliers.
+
+```{r}
+tsoutliers(decomp_ts_random)$index
+```
+
+
+### New Year Outliers
+
+As the inspection shows, new year days are always outliers. First, we will get the indices of data to correct those values.
+
+
+```{r}
+outlier_indexes <- tsoutliers(decomp_ts_random)$index
+outlier_values <- tsoutliers(decomp_ts_random)$replacements
+newyear_indices <- c(1,outlier_indexes[c(15,33,51,76)])
+newyear_indices
+```
+
+
+
+Results will be a little bit better with replacements.
+
+
+### Other Outliers
+
+
+Getting rid of all these outliers and smoothing them via tsoutliers predictions:
+
+
+```{r}
+ts_train_consumption_daily[outlier_indexes] <- outlier_values
+summary(ur.kpss(decompose(ts_train_consumption_daily)$random))
+plot(decompose(ts_train_consumption_daily)$random)
+```
+
+Again, just a bit better stationarity.
+
+
+### Remaining Outliers
+
+Next remaining outliers will be pointed out from data outliers, not error outliers. Then, they will be replaced again with the tsoutliers function estimated replacement values.
+
+
+```{r}
+still_outliers <- tsoutliers(ts_train_consumption_daily)
+ts_train_consumption_daily[still_outliers$index] <- still_outliers$replacements
+
+summary(ur.kpss(decompose(ts_train_consumption_daily)$random))
+plot(decompose(ts_train_consumption_daily)$random)
+```
+
+
+# Forecasting
+
+
+### Performance Function
+
+
+```{r}
+# performance metrics function
+
+perf_dt=function(actual,forecast){
+  n=length(actual)
+  error=actual-forecast
+  mean=mean(actual)
+  sd=sd(actual)
+  FBias=sum(error)/sum(actual)
+  MPE=sum(error/actual)/n
+  MAPE=sum(abs(error/actual))/n
+  RMSE=sqrt(sum(error^2))/n
+  MAD=sum(abs(error))/n
+  WMAPE=MAD/mean
+  l=data.frame(n,mean,sd,FBias,MAPE,RMSE,MAD,WMAPE)
+  return(l)
+}
+```
+
+
+
+### Feature Data Manipulation fot Train & Test
+
+
+```{r}
+xregr <- cbind(dt_daily$covid_severity,
+               dt_daily$sunlight_time_minutes,
+               dt_daily$production_capacity_rate,
+               dt_daily$price_of_electricity,
+               dt_daily$new_year,
+               dt_daily$nat_holiday,
+               dt_daily$sacrifice_holiday,
+               dt_daily$sacrifice_eve,
+               dt_daily$ramadan_holiday,
+               dt_daily$ramadan_eve,
+               dt_daily$monday_or_friday_between_holidays,
+               dt_daily$extra_holidays,
+               dt_daily$full_lockdown)
+
+
+newxregr <- cbind(test_dt_daily$covid_severity,
+                  test_dt_daily$sunlight_time_minutes,
+                  test_dt_daily$production_capacity_rate,
+                  test_dt_daily$price_of_electricity,
+                  test_dt_daily$new_year,
+                  test_dt_daily$nat_holiday,
+                  test_dt_daily$sacrifice_holiday,
+                  test_dt_daily$sacrifice_eve,
+                  test_dt_daily$ramadan_holiday,
+                  test_dt_daily$ramadan_eve,
+                  test_dt_daily$monday_or_friday_between_holidays,
+                  test_dt_daily$extra_holidays,
+                  test_dt_daily$full_lockdown)
+```
+
+
+### AR(1) Model
+
+```{r}
+mmmf <- sarima.for(ts_train_consumption_daily, 1,0,0,0,0,0,7, n.ahead = guess_ahead, xreg = xregr,  newxreg = newxregr)
+
+
+perf_dt(actual = test_consumption_daily, forecast = mmmf$pred)
+```
+
+
+
+### MA(1) Model
+
+```{r}
+mmmf <- sarima.for(ts_train_consumption_daily, 0,0,0,1,0,0,7, n.ahead = guess_ahead, xreg = xregr,  newxreg = newxregr)
+
+
+perf_dt(actual = test_consumption_daily, forecast = mmmf$pred)
+```
+
+Since these model are manuel models, we will utilize auto.arima model to find better values for parameters
+
+
+
+
+
+### auto.arima
+
+
+```{r}
+# auto.arima parameter finding
+
+auto.arima(ts_train_consumption_daily, xreg = xregr, seasonal = T, trace = T)
+
+```
+
+
+Found parameters will be used in seasonal arima.
+
+
+```{r}
+# sarima model
+
+mmm <- sarima(ts_train_consumption_daily, 2,0,0,2,1,0,7, xreg = xregr)
+mmm$ttable
+```
+
+
+Additional regressors are mostly significant that is good.
+
+
+
+### SARIMA Forecasting
+
+
+```{r}
+# sarima forecasting
+
+mmmf <- sarima.for(ts_train_consumption_daily, 2,0,0,2,1,0,7, n.ahead = guess_ahead, xreg = xregr, newxreg = newxregr)
+
+# plot for forecast and actual
+par(mfrow= c(2,1))
+plot(mmmf$pred)
+plot(ts_test_consumption_daily, type = "l")
+par(mfrow= c(1,1))
+```
+
+
+
+
+# Performance of SARIMA model
+
+
+```{r}
+# performance metrics
+
+perf_dt(actual = test_consumption_daily, forecast = mmmf$pred)
+```
+
+
+Next, we will try moving window approach to see if better results can be reached. Again, auto.arima parameters will be used.
+
+
+### SARIMA Moving Window Forecast
+
+
+```{r}
+# moving_window approach
+
+
+
+sliding_is_fun <- function(regressed = ts_train_consumption_daily, train_regressor = xregr, test_regressor = newxregr, sliding_window = 1)
+{
+  slicet <- nrow(test_regressor)
+  holder <- nrow(regressed)
+  pred <- c()
+  # tester_regressor <- matrix(rep(1, 13), nrow = 1)
+  for(i in 1:slicet)
+  {
+    tester_regressor <- matrix(c(test_regressor[i,]), nrow = 1)
+    guessor <- sarima.for(regressed, 2,0,0,2,1,0,7, n.ahead = sliding_window, xreg = train_regressor, newxreg = tester_regressor)
+    regressed <- c(regressed, guessor$pred)
+    pred <- c(pred, guessor$pred)
+    train_regressor <- rbind(train_regressor, tester_regressor)
+  }
+  return(pred)
+}
+
+moving_forecasted_values <- sliding_is_fun()
+```
+
+
+### Forecast
+
+
+```{r}
+moving_forecasted_values
+```
+
+
+### Performance
+
+```{r}
+perf_dt(actual = test_consumption_daily, forecast = moving_forecasted_values)
+```
+
+
+
+# Results
+
+Results show that we have a good model for estimating 14 days with around 0.04 WMAPE. It shows that our models are good and estimations can be used as proxy supply values that can guide suppliers.
+

@@ -14,3 +14,7 @@
 
 # HW3 (January 9)
 [Here](files/HW3/IE360_HW3.html) is my homework 3.
+
+# HW4 (January 29)
+[Here](files/HW4/IE360_HW4P.html) is my homework 4.
+[Here](files/HW4/arimmm.R) is my homework 4 R file.
