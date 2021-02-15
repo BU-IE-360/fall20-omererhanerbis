@@ -18,3 +18,6 @@
 # HW4 (January 29)
 [Here](files/HW4/IE360_HW4P.html) is my homework 4.
 [Here](files/HW4/arimmm.R) is my homework 4 R file.
+
+# Project (February 15)
+[Here](files/Project/Project_Report.html) is our report file for our project.
